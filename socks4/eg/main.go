@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"github.com/v2e4lisp/socks4"
+	"github.com/v2e4lisp/sample/socks4"
 )
 
 func main() {
