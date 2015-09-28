@@ -17,7 +17,12 @@ const (
 var (
 	RequestGranted        = []byte{0, 90, 0, 0, 0, 0, 0, 0}
 	RequestRejected       = []byte{0, 91, 0, 0, 0, 0, 0, 0}
-	RequestRejectedUserId = []byte{0, 93, 0, 0, 0, 0, 0, 0}
+	RequestRejectedUserId = []byte{0, 92, 0, 0, 0, 0, 0, 0}
+)
+
+var (
+	noAuth     = func(_ net.Addr, _ net.TCPAddr, _ []byte) bool { return true }
+	noFireWall = func(_ net.Addr) bool { return true }
 )
 
 type Server struct {
@@ -25,7 +30,17 @@ type Server struct {
 	FireWall func(net.Addr) bool
 }
 
+func (s *Server) setDefaults() {
+	if s.Auth == nil {
+		s.Auth = noAuth
+	}
+	if s.FireWall == nil {
+		s.FireWall = noFireWall
+	}
+}
+
 func (s *Server) Serve(addr string) error {
+	s.setDefaults()
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -44,15 +59,13 @@ func (s *Server) Serve(addr string) error {
 }
 
 func (s *Server) handleConn(conn net.Conn) {
-	if s.FireWall != nil {
-		if !s.FireWall(conn.RemoteAddr()) {
-			return
-		}
-	}
 	defer func() {
 		log.Println("Closed connection", conn.RemoteAddr())
 		conn.Close()
 	}()
+	if !s.FireWall(conn.RemoteAddr()) {
+		return
+	}
 	bufConn := bufio.NewReader(conn)
 	ver, err := bufConn.ReadByte()
 	if err != nil {
@@ -99,21 +112,19 @@ func (s *Server) handleConnect(conn net.Conn, bufConn *bufio.Reader) {
 		conn.Write(RequestRejected)
 		return
 	}
-	if s.Auth != nil {
-		if !s.Auth(conn.RemoteAddr(), tcpAddr, userId) {
-			log.Printf("user id(%v) is authorized", userId)
-			conn.Write(RequestRejectedUserId)
-			return
-		}
+	if !s.Auth(conn.RemoteAddr(), tcpAddr, userId) {
+		log.Printf("user id(%v) is authorized", userId)
+		conn.Write(RequestRejectedUserId)
+		return
 	}
 
+	log.Println("Dialing", tcpAddr.String(), "for", conn.RemoteAddr())
 	dstConn, err := net.DialTCP("tcp", nil, &tcpAddr)
 	if err != nil {
 		log.Println("Failed to connect to destination", err)
 		conn.Write(RequestRejected)
 		return
 	}
-	log.Println("Dialed", dstConn.RemoteAddr())
 	defer dstConn.Close()
 	conn.Write(RequestGranted)
 
