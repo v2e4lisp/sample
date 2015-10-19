@@ -39,13 +39,6 @@ void ttyRaw() {
 #endif
     tcsetattr(0, TCSAFLUSH, &rtt);
 }
-
-void ttyNoEcho() {
-    struct termios rtt;
-    rtt = tt;
-    rtt.c_lflag &= ~(ICANON | ECHO | ECHONL);
-    tcsetattr(0, TCSAFLUSH, &tt);
-}
 */
 import "C"
 import (
@@ -113,7 +106,7 @@ func record() {
 func replay() {
         C.ttySave()
         defer C.ttyRestore()
-        C.ttyNoEcho()
+        C.ttyRaw()
 
         script, err := os.Open("ttyrecord")
         if err != nil {
