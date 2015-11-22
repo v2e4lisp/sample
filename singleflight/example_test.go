@@ -1,6 +1,7 @@
 package singleflight_test
 
 import (
+        "errors"
         "fmt"
         "sync"
         "time"
@@ -8,9 +9,17 @@ import (
         "github.com/v2e4lisp/sample/singleflight"
 )
 
+type User struct {
+        Name string
+}
+
 func Example() {
-        hello := func(name interface{}) (interface{}, error) {
-                msg := fmt.Sprint("hello: ", name)
+        hello := func(v interface{}) (interface{}, error) {
+                user, ok := v.(*User)
+                if !ok {
+                        return nil, errors.New("type error")
+                }
+                msg := fmt.Sprint("hello: ", user.Name)
                 timer := time.NewTimer(time.Second * 1)
                 <-timer.C
                 fmt.Println("executing")
@@ -21,7 +30,10 @@ func Example() {
         var wg sync.WaitGroup
         t := func() {
                 defer wg.Done()
-                val, err := flight.Do("user")
+                user := &User{
+                        Name: "wenjun.yan",
+                }
+                val, err := flight.Do(*user, user)
                 if err != nil {
                         fmt.Println(err)
                         return
@@ -39,7 +51,7 @@ func Example() {
         wg.Wait()
         // Output:
         // executing
-        // hello: user
-        // hello: user
-        // hello: user
+        // hello: wenjun.yan
+        // hello: wenjun.yan
+        // hello: wenjun.yan
 }

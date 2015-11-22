@@ -8,24 +8,22 @@ type result struct {
 	done chan struct{}
 }
 
-type call func(interface{}) (interface{}, error)
-
 type SingleFlight struct {
-	fn    call
+	fn    func(interface{}) (interface{}, error)
 	mu    sync.RWMutex
 	cache map[interface{}]*result
 }
 
-func New(fn call) *SingleFlight {
+func New(fn func(interface{}) (interface{}, error)) *SingleFlight {
 	return &SingleFlight{
 		fn:    fn,
 		cache: make(map[interface{}]*result),
 	}
 }
 
-func (f *SingleFlight) Do(v interface{}) (interface{}, error) {
+func (f *SingleFlight) Do(key interface{}, v interface{}) (interface{}, error) {
 	f.mu.RLock()
-	if r, ok := f.cache[v]; ok {
+	if r, ok := f.cache[key]; ok {
 		f.mu.RUnlock()
 		<-r.done
 		return r.val, r.err
@@ -35,7 +33,7 @@ func (f *SingleFlight) Do(v interface{}) (interface{}, error) {
 	r := &result{
 		done: make(chan struct{}),
 	}
-	f.cache[v] = r
+	f.cache[key] = r
 	f.mu.Unlock()
 	r.val, r.err = f.fn(v)
 	close(r.done)
