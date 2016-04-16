@@ -28,6 +28,9 @@ func main() {
         w := os.Getenv("GRACE_READY_FD")
         l := os.Getenv("GRACE_SOCKET_FD")
 
+        fmt.Printf("GRACE_READY_FD=%s\n", w);
+        fmt.Printf("GRACE_SOCKET_FD=%s\n", l);
+
         wfd, err := strconv.Atoi(w)
         if err != nil {
                 log.Fatalln(err)
