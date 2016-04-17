@@ -11,11 +11,13 @@
 #include <string.h>
 
 #define DEFAULT_BACKLOG 100000
+#define DEFAULT_START_TIMEOUT 10
 #define SYSERR(msg) perror(msg);exit(1)
 #define USRERR(msg) fprintf(stderr, msg);exit(1)
 #define GRACE_SOCKET_FD "GRACE_SOCKET_FD"
 #define GRACE_READY_FD "GRACE_READY_FD"
 #define GRACE_BACKLOG "GRACE_BACKLOG"
+#define GRACE_START_TIMEOUT "GRACE_START_TIMEOUT"
 
 int childpid = 0;
 int restart = 0;
@@ -101,10 +103,9 @@ int createsock(int port) {
         SYSERR("bind");
     }
 
+    backlog = DEFAULT_BACKLOG;
     if ((p = getenv(GRACE_BACKLOG)) != NULL) {
         backlog = atoi(p);
-    } else {
-        backlog = DEFAULT_BACKLOG;
     }
     if (listen(sockfd, backlog) < 0) {
         SYSERR("listen");
@@ -123,10 +124,16 @@ void loop(int port, char *cmd[]) {
     char ph[1]; // placeholder for the byte read from pipe
     struct timeval timeout; // select timeout;
     fd_set rset; // fd set for pipe reader
+    char *p; // GRACE_START_TIMEOUT
+    int rt; // start timeout
 
     setup_signals();
     sockfd = createsock(port);
-    timeout.tv_sec = 10;
+    rt = 10;
+    if ((p = getenv(GRACE_START_TIMEOUT)) != NULL) {
+        rt = atoi(p);
+    }
+    timeout.tv_sec = rt;
     timeout.tv_usec = 0;
 
     while(1) {
