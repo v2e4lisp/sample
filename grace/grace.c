@@ -9,6 +9,8 @@
 #include <sys/time.h>
 #include <signal.h>
 #include <string.h>
+#include <errno.h>
+#include <fcntl.h>
 
 #define DEFAULT_BACKLOG 100000
 #define DEFAULT_START_TIMEOUT 10
@@ -19,37 +21,145 @@
 #define GRACE_BACKLOG "GRACE_BACKLOG"
 #define GRACE_START_TIMEOUT "GRACE_START_TIMEOUT"
 
+
+struct timeval timeout; // wait child timeout;
+
 int childpid = 0;
-int restart = 0;
+int termniate = 0;
 sigset_t osigset;
 
-void sigterm_handler(int signo) {
-    restart = 1;
+char sighupno = '1';
+char sigchldno = '2';
+char sigtermno = '3';
+int srd;
+int swr;
+
+void sighup_handler(int signo) {
+    write(swr, &sighupno, 1);
 }
 
 void sigchld_handler(int signo) {
-    int pid = 0;
-    while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
-        if (pid == childpid) {
-            childpid = 0;
+    write(swr, &sigchldno, 1);
+}
+
+void sigterm_handler(int signo) {
+    write(swr, &sigtermno, 1);
+}
+
+void wait_restart() {
+    int restart;
+    char signos[16];
+    int pid;
+    int nb;
+    int i;
+
+    while (1) {
+        restart = 0;
+        pause();
+
+        while(1) {
+            nb = read(srd, signos, 16);
+            if (nb < 0 && errno == EAGAIN) {
+                break;
+            }
+            for (i = 0; i < nb; i++) {
+                if (signos[i] == sigtermno) {
+                    termniate = 1;
+                }
+                if (signos[i] == sighupno) {
+                    restart = 1;
+                }
+            }
         }
+
+        while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+            if (pid == childpid) {
+                childpid = 0;
+                termniate = 1;
+            }
+        }
+
+        if (restart || termniate) {
+            return;
+        }
+    }
+}
+
+void wait_child(int pid, int rd) {
+    int nfd;
+    int nb;
+    char ph[1];
+    fd_set rset;
+
+ SELECT:
+    FD_ZERO(&rset);
+    FD_SET(rd, &rset);
+    nfd = select(rd + 1, &rset, NULL, NULL, &timeout);
+    if (nfd == -1 && errno == EINTR) {
+        goto SELECT;
+    }
+
+    if (!FD_ISSET(rd, &rset)) {
+        kill(pid, SIGTERM);
+        USRERR("timeout; child does not finish yet\n");
+    }
+
+ READ:
+    nb = read(rd, ph, 1);
+    if (nb == -1 && errno == EINTR) {
+        goto READ;
+    }
+
+    if (nb == -1) {
+        SYSERR("read from pipe");
+    }
+    if (nb == 0) {
+        USRERR("EOF detected; child failed to start\n");
     }
 }
 
 void setup_signals() {
     struct sigaction sachld;
+    struct sigaction sahup;
     struct sigaction saterm;
     sigset_t sigset;
+    int spipe[2];
+    // int flag;
 
+    // setup pipe for signal handling
+    if (pipe(spipe) < 0) {
+        SYSERR("pipe");
+    }
+    srd = spipe[0];
+    swr = spipe[1];
+
+    // non blocking
+    // flag = fcntl(srd, F_GETFL);
+    if (fcntl(srd, F_SETFL, O_NONBLOCK) == -1) {
+        SYSERR("fcntl O_NONBLOCK");
+    }
+    // flag = fcntl(swr, F_GETFL);
+    if (fcntl(swr, F_SETFL, O_NONBLOCK) == -1) {
+        SYSERR("fcntl O_NONBLOCK");
+    }
+
+    // only SIGHUP, SIGCHLD or SIGTERM are allowed
     sigfillset(&sigset);
-    sigdelset(&sigset, SIGTERM);
+    sigdelset(&sigset, SIGHUP);
     sigdelset(&sigset, SIGCHLD);
+    sigdelset(&sigset, SIGTERM);
+    sigdelset(&sigset, SIGINT);
     sigprocmask(SIG_SETMASK, &sigset, &osigset);
 
     sachld.sa_handler = sigchld_handler;
     sigfillset(&sachld.sa_mask);
     sachld.sa_flags = 0;
     sigaction(SIGCHLD, &sachld, NULL);
+
+    sahup.sa_handler = sighup_handler;
+    sigfillset(&sahup.sa_mask);
+    sahup.sa_flags = 0;
+    sigaction(SIGHUP, &sahup, NULL);
 
     saterm.sa_handler = sigterm_handler;
     sigfillset(&saterm.sa_mask);
@@ -59,16 +169,6 @@ void setup_signals() {
 
 void clear_sigmask() {
     sigprocmask(SIG_SETMASK, &osigset, NULL);
-}
-
-void wait_restart() {
-    while(1) {
-        pause();
-        if (!childpid || restart) {
-            restart = 0;
-            break;
-        }
-    }
 }
 
 void setenvs(int sockfd, int wr) {
@@ -120,15 +220,13 @@ void loop(int port, char *cmd[]) {
     int rd; // pipe reader fd
     int wr; // pipe writer fd
     int pid; // temp child pid;
-    int nb; // number of bytes read from pipe
-    char ph[1]; // placeholder for the byte read from pipe
-    struct timeval timeout; // select timeout;
     fd_set rset; // fd set for pipe reader
     char *p; // GRACE_START_TIMEOUT
     int rt; // start timeout
 
-    setup_signals();
     sockfd = createsock(port);
+    setup_signals();
+
     rt = 10;
     if ((p = getenv(GRACE_START_TIMEOUT)) != NULL) {
         rt = atoi(p);
@@ -137,7 +235,7 @@ void loop(int port, char *cmd[]) {
     timeout.tv_usec = 0;
 
     while(1) {
-        if (pipe(ready) != 0) {
+        if (pipe(ready) < 0) {
             SYSERR("pipe");
         }
         rd = ready[0];
@@ -150,6 +248,8 @@ void loop(int port, char *cmd[]) {
 
         if (pid == 0) {
             close(rd);
+            close(srd);
+            close(swr);
             // sigmask is preserved for child process, so we need to clear it;
             clear_sigmask();
             setenvs(sockfd, wr);
@@ -160,24 +260,7 @@ void loop(int port, char *cmd[]) {
         // close the write end of the pipe;
         close(wr);
 
-        // wait for child to finish starting;
-        FD_ZERO(&rset);
-        FD_SET(rd, &rset);
-        select(rd + 1, &rset, NULL, NULL, &timeout);
-
-        // timeout; child does not finish yet;
-        if (!FD_ISSET(rd, &rset)) {
-            USRERR("timeout\n");
-        }
-
-        nb = read(rd, ph, 1);
-        if (nb < 0) {
-            SYSERR("read from pipe");
-        }
-        // pipe is closed; child failed to start;
-        if (nb == 0) {
-            USRERR("child failed to start\n");
-        }
+        wait_child(pid, rd);
 
         close(rd);
 
@@ -188,7 +271,11 @@ void loop(int port, char *cmd[]) {
         childpid = pid;
 
         wait_restart();
-        if (!childpid) {
+
+        if (termniate) {
+            if (childpid) {
+                kill(childpid, SIGTERM);
+            }
             exit(0);
         }
     }
