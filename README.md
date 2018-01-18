@@ -91,3 +91,11 @@ func main() {
 }
 
 ```
+
+tcpdump
+--------
+
+```sh
+sudo tcpdump -A -s0 -ilo0 src port 9000
+sudo tcpdump -A -s0 -ilo0 dst port 9000
+```
