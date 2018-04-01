@@ -106,3 +106,91 @@ nc
 ```sh
 nc -vz IP_Address Port
 ```
+
+binary search
+---------------
+
+```java
+class BSearch {
+    public static void main(String[] args) {
+        BSearch s = new BSearch();
+        int l0 = s.lsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 5);
+        int l1 = s.lsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 6);
+        int l2 = s.lsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 12);
+        int l3 = s.lsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 13);
+        int l4 = s.lsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 0);
+        int l5 = s.lsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 1);
+
+        int r0 = s.rsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 5);
+        int r1 = s.rsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 6);
+        int r2 = s.rsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 12);
+        int r3 = s.rsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 13);
+        int r4 = s.rsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 0);
+        int r5 = s.rsearch(new int[]{1,2,3,4,5,5,5,5,9,12}, 1);
+
+        System.out.println("" + l0 + "," + r0);
+        System.out.println("" + l1 + "," + r1);
+        System.out.println("" + l2 + "," + r2);
+        System.out.println("" + l3 + "," + r3);
+        System.out.println("" + l4 + "," + r4);
+        System.out.println("" + l5 + "," + r5);
+
+        // ➜  tmp java BSearch
+        // 4,7
+        // 7,8
+        // 9,9
+        // 9,10
+        // -1,0
+        // 0,0
+    }
+
+    // Return the index of the first target in nums if there is one
+    // or the index of the last element which is less than target
+    //
+    // suppose that nums[-1] = MIN_VALUE and nums[length] == MAX_VALUE;
+    // The function guarantees that nums[ret] <= target && nums[ret+1] > target
+    public int lsearch(int[] nums, int target) {
+        if (nums[0] > target) return -1;
+        if (nums[nums.length-1] < target) return nums.length - 1;
+
+        int l = 0;
+        int r = nums.length-1;
+
+        // invariant: nums[r] >= target && nums[0..l-1] < target
+        while (l < r) {
+            int m = (l+r)/2;
+            if (nums[m] < target) l = m+1;
+            else r = m;
+        }
+
+        // now we have:
+        // (1) l == r
+        // (2) nums[r] >= target && nums[0..l-1] < target;
+        //
+        // => nums[r] >= target && nums[0, r-1] < target
+        if (nums[r] == target) return r;
+        return r-1;
+    }
+
+    // the counterpart of lsearch
+    // Guarantee that either the return value is nums.length or nums[ret] <= target
+    public int rsearch(int[] nums, int target) {
+        if (nums[0] > target) return 0;
+        if (nums[nums.length-1] < target) return nums.length;
+        if (nums[nums.length-1] == target) return nums.length - 1;
+
+        int l = 0;
+        int r = nums.length-1;
+
+        // invariant: nums[r] > target && nums[0..l-1] <= target
+        while (l < r) {
+            int m = (l+r)/2;
+            if (nums[m] <= target) l = m+1;
+            else r = m;
+        }
+
+        if (l > 0 && nums[l-1] == target) return l-1;
+        return l;
+    }
+}
+```
