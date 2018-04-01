@@ -145,7 +145,7 @@ class BSearch {
     }
 
     // Return the index of the first target in nums if there is one
-    // or the index of the last element which is less than target
+    // or the index of the last element < target
     //
     // suppose that nums[-1] = MIN_VALUE and nums[length] == MAX_VALUE;
     // The function guarantees that nums[ret] <= target && nums[ret+1] > target
@@ -173,7 +173,6 @@ class BSearch {
     }
 
     // the counterpart of lsearch
-    // Guarantee that either the return value is nums.length or nums[ret] <= target
     public int rsearch(int[] nums, int target) {
         if (nums[0] > target) return 0;
         if (nums[nums.length-1] < target) return nums.length;
